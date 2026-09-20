@@ -212,7 +212,7 @@ __global__ void computeIntersections(
             }
         }
 
-        if (hit_geom_index == -1)
+        if (hit_geom_index == -1) // no geometry was hit
         {
             intersections[path_index].t = -1.0f;
         }
@@ -222,7 +222,7 @@ __global__ void computeIntersections(
             intersections[path_index].t = t_min;
             intersections[path_index].materialId = geoms[hit_geom_index].materialid;
             intersections[path_index].surfaceNormal = normal;
-        }
+        } // update intersections if we hit something
     }
 }
 
@@ -342,12 +342,12 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     // TODO: perform one iteration of path tracing
 
-    generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths);
+    generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths); // set ray origin and ray dir, in dev_paths (pathsegments)
     checkCUDAError("generate camera ray");
 
     int depth = 0;
-    PathSegment* dev_path_end = dev_paths + pixelcount;
-    int num_paths = dev_path_end - dev_paths;
+    PathSegment* dev_path_end = dev_paths + pixelcount; // end of the array
+    int num_paths = dev_path_end - dev_paths; // number of pathsegments
 
     // --- PathSegment Tracing Stage ---
     // Shoot ray into scene, bounce between objects, push shading chunks
@@ -368,6 +368,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             hst_scene->geoms.size(),
             dev_intersections
         );
+        // dev_intersections should now be populated
         checkCUDAError("trace one bounce");
         cudaDeviceSynchronize();
         depth++;
