@@ -306,18 +306,19 @@ __global__ void shadeMaterial(
             if (material.emittance > 0.0f) {
                 pathSegments[idx].color *= (materialColor * material.emittance);
             }
-            // Otherwise, do some pseudo-lighting computation. This is actually more
-            // like what you would expect from shading in a rasterizer like OpenGL.
-            // TODO: replace this! you should be able to start with basically a one-liner
-            else if (material.hasReflective) {
+            //// Otherwise, do some pseudo-lighting computation. This is actually more
+            //// like what you would expect from shading in a rasterizer like OpenGL.
+            //// TODO: replace this! you should be able to start with basically a one-liner
+            //else if (material.hasReflective) {
 
-            } else if (material.hasRefractive) {
+            //} else if (material.hasRefractive) {
 
-            }
+            //}
             else {
                 // completely diffuse, also apply specularity
                 pathSegments[idx].color = materialColor * glm::dot(intersection.surfaceNormal, glm::vec3(0.0f, 1.0f, 0.0f));
             }
+
             // If there was no intersection, color the ray black.
             // Lots of renderers use 4 channel color, RGBA, where A = alpha, often
             // used for opacity, in which case they can indicate "no opacity".
@@ -431,7 +432,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
-        shadeFakeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
+        shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
             dev_intersections,
