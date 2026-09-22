@@ -280,6 +280,7 @@ __global__ void shadeFakeMaterial(
     }
 }
 
+// cosine weighted diffuse whatever
 __global__ void shadeMaterial(
     int iter,
     int num_paths,
@@ -340,6 +341,16 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
         PathSegment iterationPath = iterationPaths[index];
         image[iterationPath.pixelIndex] += iterationPath.color;
     }
+}
+
+//helper for thrust::removeif. Checks to see if intersection < 0. If so, terminate
+struct terminateRays { 
+__host__ __device__ bool operator()(const thrust::tuple<ShadeableIntersection, PathSegment>& raydata) const 
+{
+    ShadeableIntersection intersection = thrust::get<0>(raydata);
+    bool cond = intersection.t < 0.0f && thrust::get<1>(raydata).remainingBounces == 0;// terminate if we don't intersect anything and if we are out of bounces
+    return cond;
+}
 }
 
 /**
@@ -423,6 +434,24 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         cudaDeviceSynchronize();
         depth++;
 
+        // TODO: stream compact away rays that don't intersect (dev_intersections[i] should be -1 if they don't intersect)
+
+        dev_path_end = dev_paths + num_paths;
+        dev_intersections_end = dev_intersections + num_paths;
+        auto dev_raydata_start = thrust::make_zip_iterator(
+            thrust::make_tuple(dev_intersections.begin(), dev_paths.begin())
+        );
+
+        auto dev_raydata_end = thrust::make_zip_iterator(
+            thrust::make_tuple(dev_intersections_end, dev_path_end)
+        );
+
+        auto new_dev_raydata_end = thrust::remove_if(dev_raydata_start, dev_raydata_end, terminateRays());
+
+        num_paths = new_dev_raydata_end - dev_raydata_start; // update num_paths
+
+        dev_raydata_start.erase(new_dev_raydata_end, dev_raydata_end); // get rid of terminated rays
+
         // TODO:
         // --- Shading Stage ---
         // Shade path segments based on intersections and generate new rays by
@@ -432,6 +461,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
+        // calculate remainingBounces down here somewhere
+
         shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
@@ -439,7 +470,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_materials
         );
-        iterationComplete = true; // TODO: should be based off stream compaction results.
+
+        // iteractionComplete only when all rays are terminated
+        if (num_paths == 0)
+            iterationComplete = true; // TODO: should be based off stream compaction results.
 
         if (guiData != NULL)
         {
