@@ -374,24 +374,20 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         cudaDeviceSynchronize();
         depth++;
 
-        // TODO: stream compact away rays that don't intersect (dev_intersections[i] should be -1 if they don't intersect)
+        // Stream compact away rays that don't intersect
 
-        dev_path_end = dev_paths + num_paths;
-        dev_intersections_end = dev_intersections + num_paths;
-        auto dev_raydata_start = thrust::make_zip_iterator(
-            thrust::make_tuple(dev_intersections.begin(), dev_paths.begin())
+        auto dev_zipped_start = thrust::make_zip_iterator(
+            thrust::make_tuple(dev_intersections, dev_paths)
         );
 
-        auto dev_raydata_end = thrust::make_zip_iterator(
-            thrust::make_tuple(dev_intersections_end, dev_path_end)
-        );
+        auto dev_zipped_end = dev_zipped_start + num_paths;
 
-        auto new_dev_raydata_end = thrust::remove_if(dev_raydata_start, dev_raydata_end, terminateRays());
+        auto dev_zipped_end = thrust::remove_if(thrust::device, dev_zipped_start, dev_zipped_end, terminateRays()); // will rea
 
-        num_paths = new_dev_raydata_end - dev_raydata_start; // update num_paths
-
-        dev_raydata_start.erase(new_dev_raydata_end, dev_raydata_end); // get rid of terminated rays
-
+        num_paths = dev_zipped_end - dev_zipped_start; // update num_paths
+        
+        printf("Stream compacted, paths left: %d", num_paths);
+        
         // TODO:
         // --- Shading Stage ---
         // Shade path segments based on intersections and generate new rays by
@@ -410,6 +406,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_materials
         );
+        checkCudaError("Shading material")
         
 
         // iterationComplete only when all rays are terminated
