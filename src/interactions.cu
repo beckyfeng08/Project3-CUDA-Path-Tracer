@@ -1,7 +1,7 @@
 #include "interactions.h"
 
 #include "utilities.h"
-
+#include <glm/gtc/constants.hpp>
 #include <thrust/random.h>
 
 __host__ __device__ glm::vec3 calculateRandomDirectionInHemisphere(
@@ -59,5 +59,10 @@ __host__ __device__ void scatterRay(
     // spawn a new ray
     pathSegment.ray.origin = intersect;
     pathSegment.ray.direction =  calculateRandomDirectionInHemisphere(normal, rng);
-    pathSegment.color *= m.color; // also apply bsdf here? pdf and all that
+
+    glm::vec3 bsdf = m.color / glm::pi<float>();
+    float lambert = glm::abs(glm::dot(normal, pathSegment.ray.direction));
+    float pdf = pathSegment.ray.direction.z / glm::pi<float>();
+
+    pathSegment.color *= bsdf * lambert / pdf;// also apply bsdf here? pdf and all that
 }

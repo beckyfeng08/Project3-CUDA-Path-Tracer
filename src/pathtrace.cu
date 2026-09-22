@@ -6,7 +6,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
-
+#include <thrust/tuple.h>
 #include "sceneStructs.h"
 #include "scene.h"
 #include "glm/glm.hpp"
@@ -267,6 +267,7 @@ __global__ void shadeMaterial(
         intersection.surfaceNormal,
         material,
         rng);
+    // after this, then our pathSegment should be completely updated here for the ray
     pathSegment.remainingBounces -= 1;
     
 }
@@ -284,14 +285,14 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 }
 
 //helper for thrust::removeif. Checks to see if intersection < 0. If so, terminate
-struct terminateRays { 
-__host__ __device__ bool operator()(const thrust::tuple<ShadeableIntersection, PathSegment>& raydata) const 
-{
-    ShadeableIntersection intersection = thrust::get<0>(raydata);
-    bool cond = intersection.t < 0.0f && thrust::get<1>(raydata).remainingBounces == 0;// terminate if we don't intersect anything and if we are out of bounces
-    return cond;
-}
-}
+struct terminateRays {
+    __host__ __device__ bool operator()(const thrust::tuple<ShadeableIntersection, PathSegment>& raydata) const
+    {
+        ShadeableIntersection intersection = thrust::get<0>(raydata);
+        bool cond = intersection.t < 0.0f || thrust::get<1>(raydata).remainingBounces == 0;// terminate if we don't intersect anything and if we are out of bounces
+        return cond;
+    }
+};
 
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
@@ -374,19 +375,18 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         cudaDeviceSynchronize();
         depth++;
 
-        // Stream compact away rays that don't intersect
-
-        auto dev_zipped_start = thrust::make_zip_iterator(
-            thrust::make_tuple(dev_intersections, dev_paths)
-        );
-
-        auto dev_zipped_end = dev_zipped_start + num_paths;
-
-        auto dev_zipped_end = thrust::remove_if(thrust::device, dev_zipped_start, dev_zipped_end, terminateRays()); // will rea
-
-        num_paths = dev_zipped_end - dev_zipped_start; // update num_paths
+        // print dev_intersections
+        //ShadeableIntersection* printarr = new ShadeableIntersection[num_paths];
+        //cudaMemcpy(printarr, dev_intersections, num_paths * sizeof(num_paths), cudaMemcpyDeviceToHost);
+        //for (int i = 0; i < num_paths; i++) {
+        //    // print t
+        //    ShadeableIntersection intersection = printarr[i];
+        //    printf("t: array[%d] = %f\n", i, intersection.t);
+        //    printf("matID: array[%d] = %d\n", i, intersection.materialId);
+        //    printf("glmvec3: array[%d]: %f, %f, %f", i, intersection.surfaceNormal.x, intersection.surfaceNormal.y, intersection.surfaceNormal.z);
+        //}
+        //delete[] printarr;
         
-        printf("Stream compacted, paths left: %d", num_paths);
         
         // TODO:
         // --- Shading Stage ---
@@ -406,7 +406,21 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_materials
         );
-        checkCudaError("Shading material")
+        checkCUDAError("Shading material");
+
+        // Stream compact away rays that don't intersect
+
+        auto dev_zipped_start = thrust::make_zip_iterator(
+            thrust::make_tuple(dev_intersections, dev_paths)
+        );
+
+        auto dev_zipped_end = dev_zipped_start + num_paths;
+
+        dev_zipped_end = thrust::remove_if(thrust::device, dev_zipped_start, dev_zipped_end, terminateRays()); // will rea
+
+        num_paths = dev_zipped_end - dev_zipped_start; // update num_paths
+
+        printf("Stream compacted, paths left: %d", num_paths);
         
 
         // iterationComplete only when all rays are terminated
