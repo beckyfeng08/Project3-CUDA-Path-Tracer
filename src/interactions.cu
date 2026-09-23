@@ -57,12 +57,14 @@ __host__ __device__ void scatterRay(
     // deals with handling spawning rays according to material properties like reflective and refractive
 
     // spawn a new ray
-    pathSegment.ray.origin = intersect;
-    pathSegment.ray.direction =  calculateRandomDirectionInHemisphere(normal, rng);
+    pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
+    pathSegment.ray.origin = intersect + pathSegment.ray.direction * EPSILON; // add some offset so it doesn't self intersect
 
-    glm::vec3 bsdf = m.color / glm::pi<float>();
-    float lambert = glm::abs(glm::dot(normal, pathSegment.ray.direction));
-    float pdf = pathSegment.ray.direction.z / glm::pi<float>();
+    /*glm::vec3 bsdf = m.color / PI;
+    float cosTheta = glm::max(0.f, glm::dot(normal, pathSegment.ray.direction));
 
-    pathSegment.color *= bsdf * lambert / pdf;// also apply bsdf here? pdf and all that
+    float pdf = cosTheta / PI;
+    if (pdf > EPSILON)
+        pathSegment.color *= bsdf * cosTheta / pdf;*/
+    pathSegment.color *= m.color;
 }
