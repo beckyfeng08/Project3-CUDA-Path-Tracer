@@ -7,6 +7,8 @@
 #include <thrust/random.h>
 #include <thrust/remove.h>
 #include <thrust/tuple.h>
+#include <thrust/iterator/zip_iterator.h>
+
 #include "sceneStructs.h"
 #include "scene.h"
 #include "glm/glm.hpp"
@@ -290,13 +292,14 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
             image[iterationPath.pixelIndex] += iterationPath.color;
     }
 }
-
+// helper for thrust::sort. Sorts the array based on materialID
 struct sort_by_material {
-    __host__ __device__ bool operator()(ShadeableIntersection& intersect_a, ShadeableIntersection& intersect_b) const
+    __host__ __device__ bool operator()(thrust::tuple<ShadeableIntersection, PathSegment>& zipped_a, thrust::tuple<ShadeableIntersection, PathSegment>& zipped_b) const
     {
-        return intersect_a.materialId < intersect_b.materialId;// terminate if we don't intersect anything and if we are out of bounces
+        return thrust::get<0>(zipped_a).materialId < thrust::get<0>(zipped_b).materialId;// terminate if we don't intersect anything and if we are out of bounces
     }
 };
+
 //helper for thrust::removeif. Checks to see if intersection < 0. If so, terminate
 struct terminateRays {
     __host__ __device__ bool operator()(const PathSegment& pathsegment) const
@@ -397,10 +400,13 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // path segments that have been reshuffled to be contiguous in memory.
 
         // zip up with dev_paths, so the indices match
-        thrust::zip_iterator
-        // making contiguous in memory, sort by materialID
-        thrust::sort(dev_intersections, dev_intersections + num_paths, sort_by_material());
+        auto dev_zipped = thrust::make_zip_iterator(thrust::make_tuple(dev_intersections, dev_paths));
+        auto dev_zipped_end = thrust::make_zip_iterator(thrust::make_tuple(dev_intersections + num_paths, dev_paths + num_paths));
 
+        // making contiguous in memory, sort by materialID
+        thrust::sort(dev_zipped, dev_zipped_end, sort_by_material());
+
+        // apply bsdf and populate color of paths
         shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             depth,
@@ -416,13 +422,12 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // copy color data to the image before we completely terminate the rays
         finalGather << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths, dev_image, dev_paths);
 
-        dev_path_end = thrust::remove_if(thrust::device, dev_paths, dev_path_end, terminateRays()); // will rea
-        num_paths = dev_path_end - dev_paths; // update num_paths
+        // terminate rays that have no more bounces
+        dev_path_end = thrust::remove_if(thrust::device, dev_paths, dev_path_end, terminateRays());
+        num_paths = dev_path_end - dev_paths;
         
-
-        // iterationComplete only when all rays are terminated, or depth reaches 8 (maybe do some kind of adaptive samplign here)
         if (num_paths == 0)
-            iterationComplete = true; // TODO: should be based off stream compaction results.
+            iterationComplete = true;
 
         if (guiData != NULL)
         {
@@ -430,7 +435,6 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         }
     }
 
-    printf("\n");
     // Assemble this iteration and apply it to the image
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 
