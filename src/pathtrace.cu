@@ -291,6 +291,12 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
     }
 }
 
+struct sort_by_material {
+    __host__ __device__ bool operator()(ShadeableIntersection& intersect_a, ShadeableIntersection& intersect_b) const
+    {
+        return intersect_a.materialId < intersect_b.materialId;// terminate if we don't intersect anything and if we are out of bounces
+    }
+};
 //helper for thrust::removeif. Checks to see if intersection < 0. If so, terminate
 struct terminateRays {
     __host__ __device__ bool operator()(const PathSegment& pathsegment) const
@@ -386,10 +392,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // evaluating the BSDF.
         // Start off with just a big kernel that handles all the different
         // materials you have in the scenefile.
+        
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
-        // calculate remainingBounces down here somewhere
+        // zip up with dev_paths, so the indices match
+        thrust::zip_iterator
+        // making contiguous in memory, sort by materialID
+        thrust::sort(dev_intersections, dev_intersections + num_paths, sort_by_material());
 
         shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
