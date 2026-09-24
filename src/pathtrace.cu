@@ -8,6 +8,7 @@
 #include <thrust/remove.h>
 #include <thrust/tuple.h>
 #include <thrust/iterator/zip_iterator.h>
+#include <thrust/sort.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
