@@ -295,7 +295,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 }
 // helper for thrust::sort. Sorts the array based on materialID
 struct sort_by_material {
-    __host__ __device__ bool operator()(thrust::tuple<ShadeableIntersection, PathSegment>& zipped_a, thrust::tuple<ShadeableIntersection, PathSegment>& zipped_b) const
+    __host__ __device__ bool operator()(const thrust::tuple<ShadeableIntersection, PathSegment>& zipped_a, const thrust::tuple<ShadeableIntersection, PathSegment>& zipped_b) const
     {
         return thrust::get<0>(zipped_a).materialId < thrust::get<0>(zipped_b).materialId;// terminate if we don't intersect anything and if we are out of bounces
     }
@@ -405,7 +405,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         auto dev_zipped_end = thrust::make_zip_iterator(thrust::make_tuple(dev_intersections + num_paths, dev_paths + num_paths));
 
         // making contiguous in memory, sort by materialID
-        thrust::sort(dev_zipped, dev_zipped_end, sort_by_material());
+        thrust::sort(thrust::device, dev_zipped, dev_zipped_end, sort_by_material());
 
         // apply bsdf and populate color of paths
         shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
